@@ -527,9 +527,56 @@ ggplot(data = hr1,
 
 #### Modeling Pipeline
 
-With the *caret* package, there are a few different ways we can approach
-our modeling pipeline. Because this is a tutorial, I’m going to show the
-longer version where each step is explicitly carried out one at a time.
+With the *caret* package, are a TON of customization options for your
+modeling pipeline. We’re going to stick to the simpler, more
+generalizable pipeline methods, but just be aware there are many ways
+you can tweak this as desired.
+
+------------------------------------------------------------------------
+
+##### Partition Data into Train & Test
+
+We’ll start by using caret’s **createDataPartition** to split our main
+dataset into a training and testing set
+
+-   Set seed for reproducibility
+-   Stratify w/respect to the outcome via (y = hr1$performance_rating)
+-   Specify the split ratio via (p = training %)
+    -   70:30 split used below
+
+``` r
+set.seed(825) # Set Seed
+
+# Create index for split
+## Specify outcome Y, split ratio, and say list = FALSE
+
+index_trn <- createDataPartition(y = hr1$performance_rating, 
+                                 p = .7, 
+                                 list = FALSE,
+                                 times = 1)
+
+# Use index to create train & test subsets
+hr_trn <- hr1[index_trn,]
+hr_test <- hr1[-index_trn,]
+```
+
+------------------------------------------------------------------------
+
+##### Hyperparameter Tuning
+
+We use **trnControl** to specify our hyperparameter **tuning method**.
+There are a LOT of different options, but a simple default is to use
+**repeated k-fold cross-validation**.
+
+For the KNN model, we need to tune for the optimal selection of **k**.
+We’ll do so using an accuracy-based 10-fold cross-validation repeated 3x
+
+``` r
+# Specify method, number of folds, and number of repeats
+trn_Control <- trainControl(method = "repeatedcv",
+                            number = 10,
+                            repeats = 3)
+```
 
 ------------------------------------------------------------------------
 
@@ -537,183 +584,16 @@ longer version where each step is explicitly carried out one at a time.
 
 We have a couple of data pre-processing steps we need to carry out.
 
--   Create Dummy Vars for our categorical predictors
+-   **Create Dummy Vars for our categorical predictors**
     -   e.g., Convert a 5-level categorical variable to 4 dummy vars
--   Normalize/scale our predictors so they are all on the same scale
+-   **Normalize/rescale our predictors**
     -   VERY important w/KNN or any other distance-based algorithms
+    -   If neglected, larger-scale predictors will have undue influence
 
-###### Design Matrix/Data Frame including Categorical Vars
+Good news! The *caret* package allows us to pre-process our data, tune
+our hyperparameters, and train our model all in the same step!
 
-In this step we’ll create a feature/design matrix where all our
-variables are represented numerically.
-
-``` r
-# Categorical to Dummy via Base R Model Matrix
-model.matrix(performance_rating ~ ., 
-             data = hr1) -> X_mat
-
-X_df <- data.frame(X_mat[,-1]) # Convert matrix to DF, remove Intercept
-
-head(X_df)
-```
-
-    ##   salary genderM marital_descMarried marital_descSeparated marital_descSingle
-    ## 1     63       1                   0                     0                  1
-    ## 2    104       1                   1                     0                  0
-    ## 3     65       0                   1                     0                  0
-    ## 4     65       0                   1                     0                  0
-    ## 5     51       0                   0                     0                  0
-    ## 6     58       0                   0                     0                  1
-    ##   marital_descWidowed hispanic_latinoYes emp_statusTerminated.for.Cause
-    ## 1                   0                  0                              0
-    ## 2                   0                  0                              0
-    ## 3                   0                  0                              0
-    ## 4                   0                  0                              0
-    ## 5                   0                  0                              0
-    ## 6                   0                  0                              0
-    ##   emp_statusVoluntarily.Terminated departmentProduction departmentSales
-    ## 1                                0                    1               0
-    ## 2                                1                    0               0
-    ## 3                                1                    1               0
-    ## 4                                0                    1               0
-    ## 5                                1                    1               0
-    ## 6                                0                    1               0
-    ##   engage_survey emp_satisfaction absences tenure_yr
-    ## 1          4.60                5        1        11
-    ## 2          4.96                3       17         1
-    ## 3          3.02                3        3         1
-    ## 4          4.84                5       15        15
-    ## 5          5.00                4        2         5
-    ## 6          5.00                5       15        11
-
-###### Center & Scale/Normalize Predictors
-
-Now we need to rescale all of our predictors so that variables with
-larger scales don’t have undue influence. We’ll do this via
-**preProcess**.
-
-Note that the **preProcess** function doesn’t actually *transform* our
-predictors yet, it just establishes the transformation method. It also
-gives a summary of which variables were impacted:
-
-``` r
-# Center and Scale
-
-
-preproc_X <- preProcess(x = X_df,
-                       method = c("center", "scale"))
-
-preproc_X
-```
-
-    ## Created from 289 samples and 15 variables
-    ## 
-    ## Pre-processing:
-    ##   - centered (15)
-    ##   - ignored (0)
-    ##   - scaled (15)
-
-We use the **predict** function to actually “predict” the transformed
-values using our established tranformation method:
-
-``` r
-X_scaled <- predict(preproc_X, newdata = X_df) # TRANSFORM   
-
-
-# Append performance outcome back onto Feature matrix
-hr1_scaled <- cbind(hr1["performance_rating"],X_scaled)
-
-hr1_scaled %>% 
-  relocate(performance_rating,
-           .before = salary) -> hr1_scaled
-
-head(hr1_scaled)
-```
-
-    ##   performance_rating      salary    genderM marital_descMarried
-    ## 1               Pass -0.18638973  1.1354182          -0.8057137
-    ## 2               Pass  1.60916463  1.1354182           1.2368411
-    ## 3               Pass -0.09880171 -0.8776852           1.2368411
-    ## 4               Pass -0.09880171 -0.8776852           1.2368411
-    ## 5               Pass -0.71191783 -0.8776852          -0.8057137
-    ## 6               Pass -0.40535977 -0.8776852          -0.8057137
-    ##   marital_descSeparated marital_descSingle marital_descWidowed
-    ## 1            -0.2077773          1.1354182          -0.1684376
-    ## 2            -0.2077773         -0.8776852          -0.1684376
-    ## 3            -0.2077773         -0.8776852          -0.1684376
-    ## 4            -0.2077773         -0.8776852          -0.1684376
-    ## 5            -0.2077773         -0.8776852          -0.1684376
-    ## 6            -0.2077773          1.1354182          -0.1684376
-    ##   hispanic_latinoYes emp_statusTerminated.for.Cause
-    ## 1         -0.3138746                     -0.2252397
-    ## 2         -0.3138746                     -0.2252397
-    ## 3         -0.3138746                     -0.2252397
-    ## 4         -0.3138746                     -0.2252397
-    ## 5         -0.3138746                     -0.2252397
-    ## 6         -0.3138746                     -0.2252397
-    ##   emp_statusVoluntarily.Terminated departmentProduction departmentSales
-    ## 1                       -0.6390135            0.6229571      -0.3460336
-    ## 2                        1.5594972           -1.5996924      -0.3460336
-    ## 3                        1.5594972            0.6229571      -0.3460336
-    ## 4                       -0.6390135            0.6229571      -0.3460336
-    ## 5                        1.5594972            0.6229571      -0.3460336
-    ## 6                       -0.6390135            0.6229571      -0.3460336
-    ##   engage_survey emp_satisfaction   absences  tenure_yr
-    ## 1     0.6308783        1.2101939 -1.6157120  1.0978038
-    ## 2     1.0847652       -0.9894667  1.1421515 -1.8452880
-    ## 3    -1.3611807       -0.9894667 -1.2709791 -1.8452880
-    ## 4     0.9334696        1.2101939  0.7974186  2.2750405
-    ## 5     1.1351971        0.1103636 -1.4433456 -0.6680513
-    ## 6     1.1351971        1.2101939  0.7974186  1.0978038
-
-------------------------------------------------------------------------
-
-##### Data Partition into Train & Test
-
-We’ll use caret’s **createDataPartition** to split our main dataset into
-a training and testing set
-
--   Set seed for reproducibility
--   Stratify w/respect to the outcome (tell it what “y” is)
--   Specify the split ratio (p = training %, 70:30 split used below)
-
-``` r
-set.seed(825) # Set Seed
-
-# Create index for split
-index_trn <- createDataPartition(y = hr1_scaled$performance_rating, 
-                                 p = .7, 
-                                 list = FALSE,
-                                 times = 1)
-
-# Use index to create train & test subsets
-hr_trn <- hr1_scaled[index_trn,]
-hr_test <- hr1_scaled[-index_trn,]
-```
-
-------------------------------------------------------------------------
-
-##### Hyperparameter Tuning
-
-The *caret* package’s **trnControl** function allows you to choose the
-manner in which you want your hyperparameters to be tuned. There are a
-LOT of different customization options, but a simple default is to use
-**repeated k-fold cross-validation**.
-
-For the KNN model, we need to tune for the optimal selection of **k**.
-We’ll do so using an accuracy-based 10-fold cross-validation repeated 3x
-
-``` r
-# We'll use 10-fold CV repeated 3x
-trn_Control <- trainControl(method = "repeatedcv",
-                            number = 10,
-                            repeats = 3)
-```
-
-It’s important to note that as with the **preProcess** step, the tuning
-doesn’t actually occur via **trainControl**, that’s just how we
-*specify* the *tuning method* The actual tuning is conducted alongside
-the model training step.
+We’ll see how this works below in the model training section
 
 ------------------------------------------------------------------------
 
@@ -721,17 +601,24 @@ the model training step.
 
 We use *caret’s* **train** function to create our fitted model.
 
--   Specify formula
+-   Specify *formula*
     -   **Y \~ . ** if all predictors included
     -   (Y = salary + engage + …) if specific predictors included
--   Specify training data
+-   Specify *training data*
     -   **data** = hr_trn for this example
--   Specify model family via model method
+-   Specify *model family* via model method
     -   **method** = “knn” for KNN
     -   different models have different tags to specify
         -   **names(getModelInfo())** will give a list of all models
--   Specify name of **tuning method** created above
+-   Specify *tuning method* using the method name created earlier
     -   **trControl** = trn_Control
+-   Specify *pre-processing* steps
+    -   We want **preProcess** == **center** & **scale**
+
+**IMPORTANT**: Using formula notation will lead *caret* to
+**automatically** convert your factor variables to dummies internally.
+We don’t need to do anything to explicitly convert categorical to
+dummies.
 
 After fitting your model, printing the fitted object will give an
 overview of the model selected, along with the optimal hyperparameter
@@ -741,8 +628,9 @@ values chosen
 # Create fitted model
 knn_fit1 <- train(performance_rating ~ ., 
                   data = hr_trn,
-                  method = "knn", 
+                  method = "knn",
                   trControl = trn_Control,
+                  preProcess = c("center", "scale"),
                   tuneLength = 20)
 
 knn_fit1 # Overview
@@ -751,35 +639,35 @@ knn_fit1 # Overview
     ## k-Nearest Neighbors 
     ## 
     ## 203 samples
-    ##  15 predictor
+    ##  10 predictor
     ##   2 classes: 'Fail', 'Pass' 
     ## 
-    ## No pre-processing
+    ## Pre-processing: centered (15), scaled (15) 
     ## Resampling: Cross-Validated (10 fold, repeated 3 times) 
     ## Summary of sample sizes: 182, 182, 183, 183, 183, 182, ... 
     ## Resampling results across tuning parameters:
     ## 
-    ##   k   Accuracy   Kappa     
-    ##    5  0.9115873  0.23502923
-    ##    7  0.8984127  0.05964487
-    ##    9  0.8983333  0.02142857
-    ##   11  0.8966667  0.00000000
-    ##   13  0.8966667  0.00000000
-    ##   15  0.8966667  0.00000000
-    ##   17  0.8966667  0.00000000
-    ##   19  0.8966667  0.00000000
-    ##   21  0.8966667  0.00000000
-    ##   23  0.8966667  0.00000000
-    ##   25  0.8966667  0.00000000
-    ##   27  0.8966667  0.00000000
-    ##   29  0.8966667  0.00000000
-    ##   31  0.8966667  0.00000000
-    ##   33  0.8966667  0.00000000
-    ##   35  0.8966667  0.00000000
-    ##   37  0.8966667  0.00000000
-    ##   39  0.8966667  0.00000000
-    ##   41  0.8966667  0.00000000
-    ##   43  0.8966667  0.00000000
+    ##   k   Accuracy   Kappa    
+    ##    5  0.9099206  0.2284155
+    ##    7  0.9033333  0.1178866
+    ##    9  0.8966667  0.0000000
+    ##   11  0.8966667  0.0000000
+    ##   13  0.8966667  0.0000000
+    ##   15  0.8966667  0.0000000
+    ##   17  0.8966667  0.0000000
+    ##   19  0.8966667  0.0000000
+    ##   21  0.8966667  0.0000000
+    ##   23  0.8966667  0.0000000
+    ##   25  0.8966667  0.0000000
+    ##   27  0.8966667  0.0000000
+    ##   29  0.8966667  0.0000000
+    ##   31  0.8966667  0.0000000
+    ##   33  0.8966667  0.0000000
+    ##   35  0.8966667  0.0000000
+    ##   37  0.8966667  0.0000000
+    ##   39  0.8966667  0.0000000
+    ##   41  0.8966667  0.0000000
+    ##   43  0.8966667  0.0000000
     ## 
     ## Accuracy was used to select the optimal model using the largest value.
     ## The final value used for the model was k = 5.
@@ -790,7 +678,7 @@ We can also plot the hyperparameter tuning process:
 ggplot(knn_fit1) # Plot Hyperparameter tuning 
 ```
 
-![](PA_KNN_R_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+![](PA_KNN_R_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 We can also get a summary of the *final model*. This is kind of
 pointless for KNN, but is very useful for algorithms like the
@@ -806,31 +694,6 @@ knn_fit1$finalModel
     ## 
     ## Fail Pass 
     ##   21  182
-
-Finally, we can examine **variable importance**:
-
-``` r
-varImp(knn_fit1)
-```
-
-    ## ROC curve variable importance
-    ## 
-    ##                                  Importance
-    ## engage_survey                       100.000
-    ## emp_satisfaction                     39.579
-    ## emp_statusTerminated.for.Cause       23.280
-    ## genderM                              18.439
-    ## tenure_yr                            11.228
-    ## marital_descMarried                  10.372
-    ## salary                                8.594
-    ## marital_descSingle                    6.915
-    ## emp_statusVoluntarily.Terminated      4.149
-    ## hispanic_latinoYes                    3.918
-    ## departmentSales                       2.996
-    ## marital_descWidowed                   2.305
-    ## departmentProduction                  2.074
-    ## absences                              1.449
-    ## marital_descSeparated                 0.000
 
 ------------------------------------------------------------------------
 
@@ -850,9 +713,9 @@ probability estimate for each outcome class
 
 ``` r
 # Probabilistic Preds first
-knn_pred_prob1 <- predict(knn_fit1, 
-                       newdata = hr_test, 
-                       type="prob")
+knn_pred_prob1 <- predict(knn_fit1,
+                          newdata = hr_test,
+                          type="prob")
 
 head(knn_pred_prob1)
 ```
@@ -946,6 +809,38 @@ high-performers, but not so great at predicting the low-performers.
 
 ------------------------------------------------------------------------
 
+#### Generating Predictions for *Future* Data
+
+It’s great that our model performs well on our test set, but now that we
+know that, we want to use our **fitted model** to predict **new** data.
+Fortunately, the process is the exact same, and simply involves using
+*R’s* **predict** function again.
+
+We don’t have future data, so let’s create a subset of our data and
+pretend its new.
+
+``` r
+hr1[1:50,] -> hr_new   # subset pretending to be new data for tutorial
+
+hr_new[-7] -> hr_new # Remove performance outcome from "new" data
+```
+
+Predicting performance classes for these “new” data points is simple!
+
+-   Specify **fitted model object**
+-   Specify **new data** to predict
+
+``` r
+predict(knn_fit1, newdata = hr_new) -> new_preds
+
+head(new_preds)
+```
+
+    ## [1] Pass Pass Pass Pass Pass Pass
+    ## Levels: Fail Pass
+
+------------------------------------------------------------------------
+
 ##### Recap
 
 We’ve covered the following steps:
@@ -961,12 +856,12 @@ We’ve covered the following steps:
     -   Selecting optimal value of *k*
 -   **Model Fitting/Training**
     -   Create fitted model object
-
-6)  **Predictive Performance**
-
--   Generate test set performance predictions
--   Compare predictions to actual outcomes
--   Create Confusion Matrix to slice/dice accuracy issues
+-   **Predictive Performance**
+    -   Generate test set performance predictions
+    -   Compare predictions to actual outcomes
+    -   Create Confusion Matrix to slice/dice accuracy issues
+-   **Predict New/Future Data**
+    -   Generate predictions from fitted model using *predict* function
 
 ------------------------------------------------------------------------
 

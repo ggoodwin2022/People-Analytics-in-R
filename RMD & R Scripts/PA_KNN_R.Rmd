@@ -166,89 +166,33 @@ ggplot(data = hr1,
 
 #### Modeling Pipeline
 
-With the *caret* package, there are a few different ways we can approach our modeling pipeline. Because this is a tutorial, I'm going to show the longer version where each step is explicitly carried out one at a time.
+With the *caret* package, are a TON of customization options for your modeling pipeline. We're going to stick to the simpler, more generalizable pipeline methods, but just be aware there are many ways you can tweak this as desired.
 
 ***
 
-##### Data Pre-Processing
+##### Partition Data into Train & Test
 
-We have a couple of data pre-processing steps we need to carry out.
-
-* Create Dummy Vars for our categorical predictors
-  * e.g., Convert a 5-level categorical variable to 4 dummy vars
-* Normalize/scale our predictors so they are all on the same scale
-  * VERY important w/KNN or any other distance-based algorithms
-
-
-###### Design Matrix/Data Frame including Categorical Vars
-
-In this step we'll create a feature/design matrix where all our variables are represented numerically.
-
-```{r}
-# Categorical to Dummy via Base R Model Matrix
-model.matrix(performance_rating ~ ., 
-             data = hr1) -> X_mat
-
-X_df <- data.frame(X_mat[,-1]) # Convert matrix to DF, remove Intercept
-
-head(X_df)
-
-```
-
-
-###### Center & Scale/Normalize Predictors
-
-Now we need to rescale all of our predictors so that variables with larger scales don't have undue influence. We'll do this via **preProcess**.
-
-Note that the **preProcess** function doesn't actually *transform* our predictors yet, it just establishes the transformation method. It also gives a summary of which variables were impacted:
-
-```{r}
-# Center and Scale
-
-
-preproc_X <- preProcess(x = X_df,
-                       method = c("center", "scale"))
-
-preproc_X
-```
-
-We use the **predict** function to actually "predict" the transformed values using our established tranformation method:
-```{r}
-X_scaled <- predict(preproc_X, newdata = X_df) # TRANSFORM   
-
-
-# Append performance outcome back onto Feature matrix
-hr1_scaled <- cbind(hr1["performance_rating"],X_scaled)
-
-hr1_scaled %>% 
-  relocate(performance_rating,
-           .before = salary) -> hr1_scaled
-
-head(hr1_scaled)
-```
-
-***
-
-##### Data Partition into Train & Test
-
-We'll use caret's **createDataPartition** to split our main dataset into a training and testing set
+We'll start by using caret's **createDataPartition** to split our main dataset into a training and testing set
 
 * Set seed for reproducibility
-* Stratify w/respect to the outcome (tell it what "y" is)
-* Specify the split ratio (p = training %, 70:30 split used below)
+* Stratify w/respect to the outcome via (y = hr1$performance_rating)
+* Specify the split ratio via (p = training %) 
+  * 70:30 split used below
 
 ```{r}
 set.seed(825) # Set Seed
 
 # Create index for split
-index_trn <- createDataPartition(y = hr1_scaled$performance_rating, 
+## Specify outcome Y, split ratio, and say list = FALSE
+
+index_trn <- createDataPartition(y = hr1$performance_rating, 
                                  p = .7, 
                                  list = FALSE,
                                  times = 1)
 
 # Use index to create train & test subsets
-hr_trn <- hr1_scaled[index_trn,]
-hr_test <- hr1_scaled[-index_trn,]
+hr_trn <- hr1[index_trn,]
+hr_test <- hr1[-index_trn,]
 
 ```
 
@@ -256,19 +200,33 @@ hr_test <- hr1_scaled[-index_trn,]
 
 ##### Hyperparameter Tuning
 
-The *caret* package's **trnControl** function allows you to choose the manner in which you want your hyperparameters to be tuned. There are a LOT of different customization options, but a simple default is to use **repeated k-fold cross-validation**.
+We use **trnControl** to specify our hyperparameter **tuning method**. There are a LOT of different options, but a simple default is to use **repeated k-fold cross-validation**.
 
 For the KNN model, we need to tune for the optimal selection of **k**. We'll do so using an accuracy-based 10-fold cross-validation repeated 3x
 
 ```{r}
 
-# We'll use 10-fold CV repeated 3x
+# Specify method, number of folds, and number of repeats
 trn_Control <- trainControl(method = "repeatedcv",
                             number = 10,
                             repeats = 3)
 ```
 
-It's important to note that as with the **preProcess** step, the tuning doesn't actually occur via **trainControl**, that's just how we *specify* the *tuning method* The actual tuning is conducted alongside the model training step.
+***
+
+##### Data Pre-Processing 
+
+We have a couple of data pre-processing steps we need to carry out.
+
+* **Create Dummy Vars for our categorical predictors**
+  * e.g., Convert a 5-level categorical variable to 4 dummy vars
+* **Normalize/rescale our predictors** 
+  * VERY important w/KNN or any other distance-based algorithms
+  * If neglected, larger-scale predictors will have undue influence
+
+Good news! The *caret* package allows us to pre-process our data, tune our hyperparameters, and train our model all in the same step!
+
+We'll see how this works below in the model training section
 
 ***
 
@@ -276,17 +234,21 @@ It's important to note that as with the **preProcess** step, the tuning doesn't 
 
 We use *caret's* **train** function to create our fitted model.
 
-* Specify formula 
+* Specify *formula* 
   * **Y ~ . ** if all predictors included
   * (Y = salary + engage + ...) if specific predictors included
-* Specify training data
+* Specify *training data*
   * **data** = hr_trn for this example
-* Specify model family via model method
+* Specify *model family* via model method
   * **method** = "knn" for KNN
   * different models have different tags to specify
     * **names(getModelInfo())** will give a list of all models
-* Specify name of **tuning method** created above
+* Specify *tuning method* using the method name created earlier
   * **trControl** = trn_Control
+* Specify *pre-processing* steps
+  * We want **preProcess** == **center** & **scale**
+
+**IMPORTANT**: Using formula notation will lead *caret* to **automatically** convert your factor variables to dummies internally. We don't need to do anything to explicitly convert categorical to dummies.
 
 After fitting your model, printing the fitted object will give an overview of the model selected, along with the optimal hyperparameter values chosen 
 
@@ -295,8 +257,9 @@ After fitting your model, printing the fitted object will give an overview of th
 # Create fitted model
 knn_fit1 <- train(performance_rating ~ ., 
                   data = hr_trn,
-                  method = "knn", 
+                  method = "knn",
                   trControl = trn_Control,
+                  preProcess = c("center", "scale"),
                   tuneLength = 20)
 
 knn_fit1 # Overview
@@ -316,12 +279,6 @@ We can also get a summary of the *final model*. This is kind of pointless for KN
 knn_fit1$finalModel
 ```
 
-Finally, we can examine **variable importance**:
-
-```{r}
-varImp(knn_fit1)
-```
-
 ***
 
 ##### Evaluating Predictive Performance
@@ -338,9 +295,9 @@ First we'll generate **probabilistic predictions**, where we're given a probabil
 
 ```{r}
 # Probabilistic Preds first
-knn_pred_prob1 <- predict(knn_fit1, 
-                       newdata = hr_test, 
-                       type="prob")
+knn_pred_prob1 <- predict(knn_fit1,
+                          newdata = hr_test,
+                          type="prob")
 
 head(knn_pred_prob1)
 ```
@@ -388,6 +345,32 @@ It looks like our model does a really good job of predicting the high-performers
 
 ***
 
+#### Generating Predictions for *Future* Data
+
+It's great that our model performs well on our test set, but now that we know that, we want to use our **fitted model** to predict **new** data. Fortunately, the process is the exact same, and simply involves using *R's* **predict** function again.
+
+We don't have future data, so let's create a subset of our data and pretend its new.
+
+```{r}
+hr1[1:50,] -> hr_new   # subset pretending to be new data for tutorial
+
+hr_new[-7] -> hr_new # Remove performance outcome from "new" data
+
+```
+
+Predicting performance classes for these "new" data points is simple!
+
+* Specify **fitted model object**
+* Specify **new data** to predict
+
+```{r}
+predict(knn_fit1, newdata = hr_new) -> new_preds
+
+head(new_preds)
+```
+
+***
+
 ##### Recap
 
 We've covered the following steps:
@@ -403,13 +386,13 @@ We've covered the following steps:
   * Selecting optimal value of *k*
 * **Model Fitting/Training**
   * Create fitted model object
-  
-6) **Predictive Performance**
-
+* **Predictive Performance**
   * Generate test set performance predictions
   * Compare predictions to actual outcomes
   * Create Confusion Matrix to slice/dice accuracy issues
-
+* **Predict New/Future Data**
+  * Generate predictions from fitted model using *predict* function
+  
 ***
 
 Thanks for reading! Please feel free to reach out with any questions
