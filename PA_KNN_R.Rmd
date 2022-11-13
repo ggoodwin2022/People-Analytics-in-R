@@ -10,7 +10,7 @@ output: github_document
 
 This tutorial will illustrate how to use the **K-Nearest Neighbors Classifier** in *R* using the *caret* package (Kuhn, 2021). In this example, our goal is to use a number or HR-related variables to predict which performance group new employees are likely to fall under. 
 
-* Dataset and codebook can be found on my [github page](https://github.com/gmg20)
+* Dataset and codebook can be found on my [github page](https://github.com/ggoodwin2022/People-Analytics-in-R)
 
 **NOTE**: If you're already familiar with EDA & data viz, you can skip ahead to the **Modeling Pipeline** section
 
@@ -404,7 +404,7 @@ We've covered the following steps:
 * **Model Fitting/Training**
   * Create fitted model object
   
-6) Predictive Performance
+6) **Predictive Performance**
 
   * Generate test set performance predictions
   * Compare predictions to actual outcomes

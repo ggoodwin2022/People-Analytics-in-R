@@ -9,3 +9,6 @@ Credit is owed to the following sources:
 * Advanced R by Hadley Wickham
 * Building Prediction Models w/ Grouped Data by Yuan et al. (2021) 
 * caret and tidymodels documentation & examples (Max Kuhn)
+
+## Contact Me
+gg.pa.tutorials@gmail.com
